@@ -1,0 +1,430 @@
+---
+title: "STAT 542 Homework06"
+author: "Qi Liu"  
+date: "04/22/2018"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+header-includes:
+- \usepackage[utf8]{inputenc}
+- \usepackage{float}
+fontsize: 12pt
+---
+
+```{r setup, include = FALSE}
+options(width = 1000)
+knitr::opts_chunk$set(fig.width = 6, fig.height = 4, fig.align = "center")
+knitr::opts_chunk$set(cache = TRUE, autodep = TRUE, cache.comments = FALSE,
+               message = FALSE, warning = FALSE)
+```
+
+## Name: Qi Liu (qiliu6@illinois.edu)  
+
+\section{Question 1}
+```{r, echo = FALSE}
+melhousing = read.csv("Melbourne_housing.csv", sep = ",", header = T)
+```  
+
+First, find the rows in which value for `Price` is *NA*, and remove them.
+```{r}
+# Remove rows in which value for price is NA
+row_idx_na = is.na(melhousing$Price)
+melhousing = melhousing[!row_idx_na, ]
+```  
+
+According to the data documentation, variables `Rooms` and `Bedroom2` are both about the number of rooms, so we can remove one of them. Let's check the number of *NA* values in both of them.
+```{r}
+num_na_rooms = sum(is.na(melhousing$Rooms))
+num_na_bedrooms = sum(is.na(melhousing$Bedroom2))
+```  
+There are `r num_na_rooms` *NA* values in variable `Rooms`, and `r num_na_bedrooms` *NA* values in variable `Bedroom2`. So we are supposed to drop the latter variable.  
+```{r}
+melhousing$Bedroom2 = NULL
+```  
+
+Apart from this, it is enough to keep `regionname` and `CouncilArea` for the location information of each house, so we remove the `address`.  
+```{r}
+melhousing$Address = NULL
+```  
+
+Now, we perform a summary for the dataset to check if there were any outliers.
+```{r, eval = FALSE}
+summary(melhousing)
+```
+We find that the minimum values for `BuildingArea` and `LandSize` are both zero, but it is meaning less for the former variable to be 0, so we drop these subjects. 
+```{r}
+melhousing = melhousing[ - which(melhousing$BuildingArea == 0), ]
+```  
+
+We now change the `Date` into the format with only year and month, and change it as a factor.  
+```{r}
+year_month = rep(NA, times = length(melhousing$Date))
+for (i in seq_along(year_month)) {
+  year_month[i] = format(as.Date(melhousing$Date[i], format = "%d / %m / %Y"), "%Y-%m")
+}
+melhousing["Year-Month"] = as.factor(year_month)
+melhousing$Date = NULL
+```  
+
+Besides, we find that `Distance` and `Propertycount` are both factor variables in the original dataset, so we change them into numeric.
+```{r}
+melhousing$Distance = factor(melhousing$Distance)
+melhousing$Distance = as.numeric(melhousing$Distance)
+melhousing$Propertycount = as.numeric(melhousing$Propertycount)
+``` 
+
+In the next part, we mainly deal with the missing values in this dataset. Here we use missForest to perform this imputation. Because the missForest cannot handle categorical variables with more than 53 categories, we drop the variables `Suburb`, `SellerG`, and `Postcode`. To begin with, we calculate the proportion of missing values for each subjects, and remove subjects with a proportion more than 15%, which means that there are more than 3 missing values in that subject.
+```{r}
+# library(missForest)
+# observations_na = sapply(c(1:nrow(melhousing)), FUN = function(i) {sum(is.na(melhousing[i, ])) / ncol(melhousing)}, simplify = TRUE)
+# melhousing = melhousing[observations_na <= 0.15, ]
+# melhousing$Suburb = NULL
+# melhousing$SellerG = NULL
+# melhousing$Postcode = NULL
+# melhousing.imp = missForest(melhousing, ntree = 30)
+# 
+# # Store the cleaned data into a csv file
+# write.csv(melhousing.imp$ximp, file = "mel_data.csv")
+```  
+
+After the data clean process above, in the final step, we provide simple descriptive statistics for each variable.
+```{r}
+mel_data = read.csv("mel_data.csv", sep = ",", header = TRUE)
+mel_data$X = NULL
+```
+
+To begin with, plot a histogram for the `Price`.  
+```{r, echo = FALSE}
+library(ggplot2)
+ggplot(data = mel_data, aes(Price)) + 
+  geom_histogram(binwidth = 100000, color = "white", fill = "#771C19") + 
+  ggtitle("House Price Distribution in Melbourne") + 
+  scale_x_continuous(breaks = c(1000000, 2000000, 3000000, 4000000), labels = c("$1m", "$2m", "$3m", "$4m"))
+```  
+
+Next, we make summary for all the categorical variables.  
+```{r, echo = FALSE}
+par(mfrow = c(2, 1))
+ggplot(data = mel_data, aes(Year.Month)) + 
+  geom_bar(color = "white", fill = "#771C19") + 
+  ggtitle("Distribution for House Selling with Date")
+ggplot(data = mel_data, aes(CouncilArea)) + 
+  geom_bar(color = "white", fill = "#771C19") +
+  ggtitle("Distribution for Number of Houses with CouncilArea")
+```  
+
+```{r, echo = FALSE}
+df_Type = as.data.frame(table(mel_data$Type))
+colnames(df_Type) = c("Type", "Counts")
+knitr::kable(df_Type, caption = "Summary for Type")
+```  
+
+```{r, echo = FALSE}
+df_Type = as.data.frame(table(mel_data$Method))
+colnames(df_Type) = c("Method", "Counts")
+knitr::kable(df_Type, caption = "Summary for Method")
+```  
+
+```{r, echo = FALSE}
+df_Type = as.data.frame(table(mel_data$Regionname))
+colnames(df_Type) = c("Regionname", "Counts")
+knitr::kable(df_Type, caption = "Summary for Regionname")
+```
+
+In the final step, we make discription for numeric variables. 
+```{r, echo = FALSE}
+# hist(mel_data$Rooms, col = "dodgerblue", 
+#      main = "Histogram for Number of Rooms and Cars Position", 
+#      xlab = "Number",
+#      ylab = "Frequency")
+# hist(mel_data$Bathroom, col = "darkorange", add = TRUE)
+# legend(10, 8000, legend = c("Rooms", "Bathrooms"), col = c("dodgerblue", "darkorange"), lty = c(1, 1))
+
+library(plotrix)
+l = list(mel_data$Rooms, mel_data$Bathroom, mel_data$Car)
+multhist(l, col = c("dodgerblue", "darkorange", "grey"), main = "Histogram for Rooms, Bathroom and Car")
+legend(20, 8000, legend = c("Rooms", "Bathroom", "Car"), col = c("dodgerblue", "darkorange", "grey"), lty = c(1, 1, 1))
+```  
+Below is the summary for `Landsize` and `BuildingArea`.
+```{r}
+summary(mel_data$Landsize)
+summary(mel_data$BuildingArea)
+```  
+
+Below are shown two histograms for `Lattitude` and `Longtitude`.
+```{r, echo = FALSE}
+hist(mel_data$Lattitude, col = "aquamarine1",
+     main = "Histogram for Lattitude",
+     xlab = "Lattitude")
+```  
+```{r, echo = FALSE}
+hist(mel_data$Longtitude, col = "bisque1",
+     main = "Histogram for Longtitude",
+     xlab = "Longtitude")
+```  
+
+
+\section{Question 2}
+There is an intuition that the location for a house has a huge impact on its price. In this section, we are going to perform clustering. Because some clustering algorithms are used for categorical variables and others are used for numerical, so to begin with, let's divide the dataset into categorical parts and numerical parts(with variable `Price` removed).  
+```{r}
+numeric_var = c("Rooms", "Distance", "Bathroom", "Car", "Landsize", "BuildingArea", "YearBuilt", "Lattitude", "Longtitude", "Propertycount")
+categorical_var = c("Type", "Method", "CouncilArea", "Regionname", "Year.Month")
+
+mel_data_num = mel_data[, numeric_var]
+mel_data_cat = mel_data[, categorical_var]
+```  
+
+Next, let's perform kmeans clustering on the numerical part. We choose 8 for the hyperparameter `centers` because there are 8 regions. 
+```{r}
+test.kmeans = kmeans(mel_data_num, centers = 8, nstart = 100, trace = FALSE)
+
+cnt_table = table(data.frame(mel_data_cat$Regionname, test.kmeans$cluster))
+cnt = table(mel_data_cat$Regionname)
+
+# Change the absolute values into ratio
+for (i in 1:nrow(cnt_table)) {
+  cnt_table[i, ] = cnt_table[i, ] / cnt[[i]]
+}
+
+# Display results
+knitr::kable(round(cnt_table, digits = 3), caption = "Results of Kmeans for Numerical Part")
+```  
+
+Because the number of each region is different, so we display the clustering results with ratio rather than absolute counts, for example, among subjects in Eastern Metropolitan, about 20.6% of them fall into the $2^{nd}$ cluster. However, all the data are concentrated in the $2^{nd}$ and $3^{rd}$ cluster, which means there is no obvious pattern in this clustering result. Now let's check clustering for categorical variables.  
+```{r}
+library(klaR)
+test.kmodes = kmodes(mel_data_cat, modes = 8, iter.max = 30)
+cnt_table_2 = table(data.frame(mel_data_cat$Regionname, test.kmodes$cluster))
+
+# Change absolute counts into ratio
+for (i in 1:nrow(cnt_table_2)) {
+  cnt_table_2[i, ] = cnt_table_2[i, ] / cnt[[i]]
+}
+
+# Display results
+knitr::kable(round(cnt_table_2, digits = 3), caption = "Results of Kmodes for Numerical Part")
+```  
+
+As we can see, the result for `kmodes` is not that concentrated as `kmeans`. For example, about 58.9% of the Eastern Victoria subjects are in the $3^{rd}$ cluster, and 65.4% of the Northern Metropolitan are in the $4^{th}$ cluster, both of which account for their largest proportion. In this way, we can reach a conclusion that `Regionname` is a good representation for the categorical subset of the original data, and in this way, in the next section for analyzing price, we can put more importance in this variable because it is representative.  
+
+\section{Question 3}  
+
+**3.1** Penalized Linear Regression  
+First of all, we use lasso to perform penalized linear regression. Because lasso is only able to handle numerical variables, we first transform the categorical variables in the dataset into dummy ones.
+```{r}
+library(dplyr)
+library(stringr)
+
+# Select the factor variables
+vars_name = mel_data %>%
+  select(-Price) %>%
+  select_if(is.factor) %>%
+  colnames() %>% 
+  str_c(collapse = "+")
+
+# Create a string of formula for the model
+model_string = paste("Price ~ ", vars_name)
+
+# Create dummy variables from factors
+mel_data_fac_dum = model.matrix(as.formula(model_string), mel_data)
+
+# Remove the original factor variables from mel_data
+fac_var = mel_data %>%
+  select(-Price) %>%
+  select_if(is.factor) %>%
+  colnames()
+mel_data[, fac_var] = NULL
+```
+
+Notice there is a variable `YearBuilt`. The age of a property is a more significant and direct feature in practical situation, so we change `YearBuilt` into `Age` by subtracting the year from 2018. Besides, in this part, we take log of `Price` as the target variable because in the part of Question 1, it is obvious in the histogram of `Price` that the distribution is skewed. In this way, it is better to take log transformation to reduce the skew.
+```{r}
+# Change the variable YearBuilt into a categorical variable
+mel_data["Age"] = 2018 - mel_data["YearBuilt"]
+mel_data$YearBuilt = NULL
+
+# Combine the numerical part and dummy variables 
+# to create the new dataset
+mel_data = cbind(mel_data, mel_data_fac_dum)
+
+# Split the dataset into training and testing set
+set.seed(1)
+train_idx = sample(1:nrow(mel_data), as.integer(0.80 * nrow(mel_data)), replace = FALSE)
+mel_trn = mel_data[train_idx, ]
+mel_tst = mel_data[-train_idx, ]
+```
+
+Now, a new dataset is created with the factor variables in the original dataset transformed into dummy ones. In the next step, we perform lasso regression. 
+```{r}
+library(glmnet)
+
+# Perform Lasso Regression
+x_mel_trn = as.matrix(subset(mel_trn, select = -c(Price)))
+y_mel_trn = as.numeric(log(mel_trn$Price))
+x_mel_tst = as.matrix(subset(mel_tst, select = -c(Price)))
+y_mel_tst = as.numeric(log(mel_tst$Price))
+
+set.seed(1)
+lasso_model = cv.glmnet(x_mel_trn, y_mel_trn, family = "gaussian", alpha = 1, nfolds = 10)
+
+pred = predict(object = lasso_model, newx = x_mel_tst, type = "response")
+
+# Function for RMSE
+cal_rmse = function(actual, predicted) {
+  sqrt(mean((exp(actual) - exp(predicted)) ^ 2))
+}
+
+test_rmse = round(cal_rmse(actual = y_mel_tst, predicted = pred), 6)
+lambda_tuning = round(lasso_model$lambda.min, digits = 5)
+```  
+The best $\lambda$ value used for Lasso regression is `r lambda_tuning`, and the test Root Mean Square Error is 476380.  
+
+
+Because Lasso can shrinkage the coefficients of some variables to 0, we then write a function to extract the nonzero coefficients and display them in a table.
+```{r}
+library(kableExtra)
+library(knitr)
+print_glmnet_coefs = function(cvfit, s ="lambda.min") {
+    ind = which(coef(cvfit, s = s) != 0)
+    df = data.frame(
+        feature = rownames(coef(cvfit, s = s))[ind],
+        coeficient = coef(cvfit, s = s)[ind]
+    )
+    df
+}
+df.lasso = print_glmnet_coefs(cvfit = lasso_model)
+df.lasso %>%
+  kable("pandoc", caption = "Coefficients for Lasso") %>%
+  kable_styling(full_width = FALSE)
+```  
+
+As we can see from the table, this lasso regression shrinkage some of the `CouncilArea`, `Year.Month`, and one `Method` to zero. All the `Regionname` is left nonzero, which corresponds to the result of clustering analysis in Question 2.  
+
+Then we apply forward selection with AIC as the criteria. 
+```{r}
+# Perform AIC
+upper_model = lm(log(Price) ~ ., data = mel_data)
+lower_model = lm(log(Price) ~ 1, data = mel_data)
+for_aic_model = step(object = lm(log(Price) ~ ., data = mel_data),
+                     direction = "forward",
+                     scope = list(upper = upper_model, lower = lower_model),
+                     k = 2,
+                     trace = 0)
+pred = predict(object = for_aic_model, newdata = as.data.frame(x_mel_tst))
+test.rmse = cal_rmse(actual = y_mel_tst, predicted = pred)
+``` 
+In this forward selection model, the test RMSE is 399009.4, which is less than that in Lasso regression. 
+
+Lasso's great strength is that it can estimate models in which $p \gg n$, as can be the case forward (but not backward) stepwise regression. In both cases, these models can be effective for prediction only when there is a handful of very powerful predictors. Is an outcome is better predicted by many weak predictors, then ridge regression or bagging/boosting will outperform both forward stepwise regression and Lasso by a long shot. Besides, Lasso is much faster than forward stepwise regression.  
+
+**3.2** Nonparametric Models  
+1. **Random Forest**  
+Because function `randomForest` is able to handle categorical variables with less than 33 factor levels, we keep the dummy variables in in last part. And the ratio of training and testing data is still 4:1. At the beginning, we randomly choose several values for hyperparameter `ntree`, and then train a random forest model on training data. Next, make prediction on the testing data, and finally calculate the rmse using the defined helper function above in order to find the best tuning parameters. According to one question in a previous homework, variance for the random forest would continue decreasing until the `ntree` reaches 500, after which the variance shows no specific tendency. In this way, to compute more effciently, we use the default value of `ntree` which is 500, and just tune the `mtry` hyperparameter. 
+```{r}
+library(randomForest)
+set.seed(1)
+mtry.seq = seq(20, 30, 1)
+mel.rf = function(mtry.val) {
+  mel.rf = randomForest(x = x_mel_trn, y = y_mel_trn, mtry = mtry.val)
+  rf_pred = predict(mel.rf, newdata = x_mel_tst)
+  cal_rmse(actual = y_mel_tst, predicted = rf_pred)
+}
+
+test.rmse = sapply(mtry.seq, FUN = mel.rf, simplify = TRUE)
+best_mtry = mtry.seq[which.min(test.rmse)]
+lowest_rmse = min(test.rmse)
+```  
+
+The lowest test rmse for this random forest model is stored in lowest_rmse, and the corresponding `mtry` is `r best_mtry`. It is obvious that random forest performs better than Lasso anc Forward stepwise selection. 
+
+One disadvantage of random forest is its application in categorical variables. For data including categorical variables with different number of levels, random forests are biased in favor of attributes with more levels.
+
+2. **Boosting**  
+In this code cell, we use training data to train a boosting model, make prediction on testing data, and find the best tuning parameters through calculating RMSE. Also, for the categorical variables in original dataset, we use the converted dummy variables. Reasons for doing so would be stated in details after the tuning procedure.   
+```{r}
+library(gbm)
+mel_trn$`(Intercept)` = NULL
+mel_tst$`(Intercept)` = NULL
+n.trees_seq = c(1:10) * 100
+shrinkage_seq = c(0.01, 0.1)
+test_rmse_mat = matrix(NA, nrow = length(n.trees_seq),
+                       ncol = length(shrinkage_seq))
+for (i in seq_along(n.trees_seq)) {
+  for (j in seq_along(shrinkage_seq)) {
+    # Train model
+    mel.gbm = gbm(log(Price) ~ ., data = mel_trn, 
+              n.trees = n.trees_seq[i], 
+              shrinkage = shrinkage_seq[j], 
+              bag.fraction = 0.8, 
+              interaction.depth = 5,
+              distribution = "gaussian")
+    
+    # Make prediction
+    pred_gbm = predict.gbm(mel.gbm, newdata = mel_tst, n.trees = n.trees_seq[i])
+    
+    # Calculate RMSE and store the result
+    test_rmse_mat[i, j] = cal_rmse(actual = y_mel_tst, predicted = pred_gbm)
+  }
+}
+
+df = data.frame(test_rmse_mat)
+colnames(df) = c("Shrinkage = 0.01", "Shrinkage = 0.1")
+rownames(df) = c("n.trees = 100", "n.trees = 200", "n.trees = 300", "n.trees = 400", "n.trees = 500", "n.trees = 600", "n.trees = 700", "n.trees = 800", "n.trees = 900", "n.trees = 1000")
+
+ind_min = which(df == min(df), arr.ind = TRUE)
+rmse_min = min(df)
+shrinkage_min = shrinkage_seq[ind_min[2]]
+n.trees_min = n.trees_seq[ind_min[1]]
+```  
+The smallest test rmse for this boosting model is stored in rmse_min, for which the hyperparameters of model are respectively `r shrinkage_min` for shrinkage, and `r n.trees_min` for n.trees. Besides, test rmse for each combination of hyperparameters are displayed below. 
+
+```{r}
+library(knitr)
+library(kableExtra)
+library(dplyr)
+kable(df, "latex") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```  
+As we can see from the table, test rmse for model with the smaller shrinkage is larger than that with larger one, which is abnormal. I think this might be because the learning rate is lower for a smaller shrinkage, and it takes far more iterations to reach the optimal. Maybe the iteration times in this example is not enough.  
+
+A typical disadvantage of boosting is its longer computation time due to the fact that trees are built sequentially. However, boosting usually give higher accuracy or lower error than random forest.
+
+Finally, we explain the reasons for creating dummy variables. Most tree based models have an algorithm that, when given a categorical predictor, find the optimal split. A lot os these look at different configurations of how to split the category. If we have dummy variables, it only considers one value if that predictor at a time. Even though it has more predictors to sift through, using dummy variables makes the training time shorter and the trees slightly deeper.  
+
+\section{Question 4}  
+There are large amounts of missing values in the original dataset. For the convenience of data analysis, we use imputation techniques. Generally speaking, it is better to impute missing values than just removing the corresponding subjects. However, this is a source of error because different methods of imputation may lead to different model fitting. Considering this, I think fitting a xgboost model might improve the performance upon the existing models. XGBoost is designed to handle missing values internally. The missing values are treated in such a manner that if there exists any trend in missing values, it is captured by the model. 
+
+Apart from this, unlike gbm, where tree pruning stops once a negative loss is encountered, XGBoost grows the tree upto max_depth, and then prune backward until the improvement in loss function is below a threshold.  
+
+Fortunately, XGBoost is enabled with parallel processing, and the computation speed is higher than gmb. 
+```{r}
+library(xgboost)
+mel_xgb = xgboost(data = x_mel_trn,
+                  label = y_mel_trn,
+                  booster = "gbtree",
+                  objective = "reg:linear",
+                  colsample_bytree = 0.6,
+                  gamma = 0,
+                  learning_rate = 0.05,
+                  max_depth = 6,
+                  min_child_weight = 1,
+                  n_estimators = 7300,
+                  reg_alpha = 1,
+                  reg_lambda = 0,
+                  subsample = 1,
+                  seed = 42,
+                  silent = 0,
+                  nrounds = 200,
+                  eta = 0.3, 
+                  verbose = 0)
+xgb_pred = predict(mel_xgb, newdata = x_mel_tst)
+
+test.rmse = cal_rmse(actual = y_mel_tst, predicted = xgb_pred)
+```  
+The test rmse for this XGBoost model is stored in test.rmse, which is higher than the gbm and random forest model displayed above. Apart from this we plot the feature importance from this XGBoost model.  
+
+```{r}
+mat = xgb.importance(feature_names = colnames(x_mel_trn), model = mel_xgb)
+xgb.plot.importance(importance_matrix = mat)
+```
+As we can see from the plot, the most important variable is building area, which is in agreement with our commen sense that the larger a house is, the more expensive it is. Apart from this, the most important factor variable is the CouncilArea, which is not in agreement with the result of clustering. And this should be solved in the following study.  
+
