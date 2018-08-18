@@ -1,0 +1,215 @@
+---
+title: "Code_for_adaboost"
+author: "Qi Liu"
+date: "8/18/2018"
+output: pdf_document
+---
+
+a)  
+```{r}
+# Write a function for gini index
+gini = function(w, y) {
+  # @param w: sequence of weights for each subject
+  # @param y: sequence of classification labels for each subject
+  p = sum(w[which(y == 1)]) / sum(w)
+  result = p * (1 - p)
+  
+  return (result)
+}
+
+# Write a function for score
+score = function(x, c, w, y) {
+  # @param x: independent data for each subject
+  # @param c: splitting point
+  # @param w: sequence of weights for each subject
+  # @param y: sequence of classification labels for each subject
+  
+  # Indices of subjects for the left side
+  L = which(x <= c)
+  # Indices of subjects for the right side
+  R = which(x > c)
+  scr = -(sum(w[L]) * gini(w[L], y[L]) + sum(w[R]) * gini(w[R], y[R])) / sum(w)
+  
+  return (scr)
+}
+
+# Write a function for searching for the splitting point
+myStump = function(x.train, w, y, x.test = NULL) {
+  # @return: a list containing the splitting point, 
+  # and a sequence of predictions for testing data
+  
+  # If there is no tesing data, then make prediction just for the training data
+  if (is.null(x.test)) {
+    x.test = x.train
+  }
+  
+  # Find the splitting point
+  splitting.rule = x.train[which.max(sapply(seq_along(x.train), 
+                                            function(i) {
+                                              score(x.train, x.train[i], w, y)
+                                              }))]
+  
+  # Make classification
+  L = which(x.train <= splitting.rule)
+  R = which(x.train > splitting.rule)
+  class.L = sign(sum(w[L] * y[L]))
+  class.R = sign(sum(w[R] * y[R]))
+  
+  # For training data
+  pred.x.train = rep(NA, times = length(y))
+  pred.x.train[which(x.train <= splitting.rule)] = class.L
+  pred.x.train[which(x.train > splitting.rule)] = class.R
+  
+  # For testing data
+  pred.x.test = rep(NA, times = length(y))
+  pred.x.test[which(x.test <= splitting.rule)] = class.L
+  pred.x.test[which(x.test > splitting.rule)] = class.R
+  
+  return (list(splitting.rule, pred.x.test, pred.x.train))
+}
+```  
+
+Now, we generate a toy dataset to test this `myStump` function.  
+```{r}
+n = 300
+set.seed(1)
+x = runif(n, -1, 1)
+y = rbinom(n, size = 1, prob = ifelse(x ^ 2 <= 0.6, 0.9, 0.1))
+y[y == 0] = -1
+w = rep(1 / n, n)
+splitting_point = myStump(x, w, y)[[1]]
+pred = myStump(x, w, y)[[2]]
+mis_rate = mean(y != pred)
+```  
+The selected splitting point is `r splitting_point`, and the misclassification rate using this function is `r mis_rate`.
+
+
+b)  
+Write a function to fit the adaboost model using the stump as the base learner.  
+```{r}
+myAdaBoost = function(x.train, y.train, iter = 500, x.test = NULL) {
+  # @param iter: iteration times
+  
+  if (is.null(x.test)) {
+    x.test = x.train
+  }
+  
+  N = length(y.train)
+  weights = matrix(NA, nrow = N, ncol = iter)
+  weights[ , 1] = rep(1 / N, N)
+  errors = rep(NA, times = iter)
+  alpha = rep(NA, times = iter)
+  
+  # Initialize a matrix to store the prediction result
+  # for each iteration
+  pred_mat_trn = matrix(NA, nrow = N, ncol = iter)
+  exp_errs_trn = rep(NA, times = iter)
+  pred_mat_tst = matrix(NA, nrow = N, ncol = iter)
+  exp_errs_tst = rep(NA, times = iter)
+  
+  for (t in 1:iter){
+    # Fit a weak learner
+    weight = weights[ , t]
+    pred_trn = myStump(x.train = x.train, w = weight, y = y.train)[[3]]
+    pred_tst = myStump(x.train = x.train, w = weight, y = y.train, x.test)[[2]]
+    
+    # Compute error (use training data)
+    errors[t] = sum(weight[which(y.train != pred_trn)])
+    
+    # Compute alpha
+    alpha[t] = 0.5 * log((1 - errors[t]) / errors[t])
+    
+    # Update weights
+    # Only when it is not the last iteration then we update weights
+    if (t < iter) {
+      for (i in 1:N) {
+      weights[i, (t + 1)] = weights[i, t] * exp(-alpha[t] * y.train[i] * pred_trn[i])
+      }
+      for (i in 1:N) {
+        weights[i, (t + 1)] = weights[i, (t + 1)] / sum(weights[ , (t + 1)])
+      }
+    }
+    
+    
+    # Store alpha * pred for this iteration
+    pred_mat_trn[ , t] = alpha[t] * pred_trn
+    pred_mat_tst[ , t] = alpha[t] * pred_tst
+    
+    # Compute the exponential error upper bound until this iteration
+    exp_errs_trn[t] = mean(exp(- rowSums(as.matrix(pred_mat_trn[ , 1:t])) * y.train))
+    
+  }
+  
+  # Compute the prediction result for testing data
+  F_mat = rowSums(pred_mat_tst)
+  pred_tst = rep(NA, times = N)
+  for (i in 1:N) {
+    pred_tst[i] = sign(F_mat[i])
+  }
+  
+  # Compute the prediction result for training data
+  F_mat_trn = rowSums(pred_mat_trn)
+  pred_trn = rep(NA, times = N)
+  for (i in 1:N) {
+    pred_trn[i] = sign(F_mat_trn[i])
+  }
+  
+  return (list(exp_errs_trn, pred_tst, pred_trn))
+}
+```  
+
+Next, generate a dataset to test the code, and plot the exponential error upper bound with respect to each iteration.  
+```{r}
+set.seed(300)
+n = 300
+x_train = runif(n)
+y_train = (rbinom(n, 1, (sin(4 * pi * x_train) + 1) / 2) - 0.5) * 2
+x_test = runif(n)
+y_test = (rbinom(n, 1, (sin(4 * pi * x_test) + 1) / 2) - 0.5) * 2
+```
+
+```{r}
+iteration = 600
+exp_err_train = myAdaBoost(x.train = x, y.train = y, iter = iteration, x.test = NULL)[[1]]
+df = data.frame(Iteration = c(1:iteration), ExponentialError = exp_err_train)
+```
+
+```{r, echo = FALSE}
+library(ggplot2)
+ggplot() + 
+  ggtitle("Exponential Errors along each Iteration") + 
+  geom_line(data = df, aes(x = Iteration, y = ExponentialError, color = "Exponential Upper Bound")) 
+```  
+
+In the code cell above, we have generated an independent set of testing data using the same model. Then in the next code cell, we calculate the training and testing errors with respective to iteration times, and finally visualize the relationship.  
+```{r}
+library(ggplot2)
+T = 50
+test_errors = rep(NA, times = T)
+for (t in 1:T) {
+  test_pred = myAdaBoost(x.train = x_train, y.train = y_train, 
+                         iter = t, x.test = x_test)[[2]]
+  test_errors[t] = mean(test_pred != y_test)
+}
+
+train_errors = rep(NA, times = T)
+for (t in 1:T) {
+  train_pred = myAdaBoost(x.train = x_train, y.train = y_train, 
+                          iter = t, x.test = x_test)[[3]]
+  train_errors[t] = mean(train_pred != y_train)
+}
+
+df_trn = data.frame(iteration = 1:T, train.errors = train_errors)
+df_tst = data.frame(iteration = 1:T, test.errors = test_errors)
+```
+
+
+```{r, echo = FALSE}
+ggplot() + 
+  geom_line(data = df_trn, aes(x = iteration, y = train.errors, color = "Training Errors"), size = 1.2) + 
+  geom_line(data = df_tst, aes(x = iteration, y = test.errors, color = "Testing Errors"), size = 1.2) + 
+  ggtitle("Check for potential overfitting") 
+
+
+```  
+We see that both training and testing error decreases drastically at the beginning. After that, both the training and testing error nearly stays the same. So after the substantial descrease, the model tends to overfitting. 
