@@ -1,0 +1,304 @@
+---
+title: "code_for_svm"
+author: "Qi Liu"
+date: "8/18/2018"
+output: pdf_document
+---
+
+## a)  
+```{r, include = FALSE}
+# Generate data
+set.seed(1)
+n = 40
+p = 2
+xpos = matrix(rnorm(n * p, mean = 0, sd = 1), n, p)
+xneg = matrix(rnorm(n * p, mean = 4, sd = 1), n, p)
+x = rbind(xpos, xneg)
+y = matrix(c(rep(1, n), rep(-1, n)))
+N = 2 * n
+```  
+The dual form is
+$$
+\min \ \left(\displaystyle\frac{1}{2}\sum_{i=1}^{n}\sum_{j=1}^{n}\alpha_{i}\alpha_{j}y_{i}y_{j}\boldsymbol{x}_{i}^{T}\boldsymbol{x}_{j}-\sum_{i=1}^{n}\alpha_{i}\right)
+$$
+$$
+\mathrm{s.t.}
+\begin{cases}
+\alpha_{i} \geq 0 \\
+\\
+\displaystyle\sum_{i=1}^{n}\alpha_{i}y_{i}=0
+\end{cases}
+$$  
+We rewrite $\mathrm{X}$ as 
+$$
+\mathrm{X}=
+\left[ \begin{array}{c}
+\boldsymbol{x}_{1}^{\mathrm{T}} \\
+\boldsymbol{x}_{2}^{\mathrm{T}} \\
+\vdots\\
+\boldsymbol{x}_{N}^{\mathrm{T}} \\
+\end{array} \right],
+$$  
+where $N$ is the total number of sample points.
+
+Now rewrite this dual form with matrix and vector, we can get  
+$$
+\min \left(\displaystyle\frac{1}{2}\boldsymbol{\alpha}^{\mathrm{T}}\mathrm{Q}^{\mathrm{T}}\mathrm{Q}\boldsymbol{\alpha}-\boldsymbol{d}^{\mathrm{T}}\boldsymbol{\alpha}\right)
+$$
+where,
+$$
+\quad  \boldsymbol{\alpha} = \left[\alpha_{1}, \alpha_{2},\cdots ,\alpha_{N}\right]^{\mathrm{T}}, \boldsymbol{d}=[1, 1, \cdots, 1]^{\mathrm{T}},\\
+\mathrm{Q}=\left[y_{1}\boldsymbol{x}_{1},\  y_{2}\boldsymbol{x}_{2},\ \cdots,\ y_{N}\boldsymbol{x}_{N}\right]
+$$  
+so $\mathrm{D}=\mathrm{Q}^{\mathrm{T}}\mathrm{Q}$.
+And the matrices in constrains part are 
+$$
+\mathrm{A}^{\mathrm{T}}=
+\left[ \begin{array}{cccc}
+y_{1} \quad y_{2} \quad \cdots \quad y_{n} \\
+1     \quad  0    \ \quad \cdots \quad  0    \\
+0     \quad  1    \ \quad \cdots \quad  0    \\
+\vdots \quad \vdots \quad \vdots \quad \vdots \\
+0     \quad  0    \ \quad \cdots \quad  1    \\
+\end{array} \right]
+and \ \ \boldsymbol{b}_{0}=[0, 0, \cdots, 0]^{\mathrm{T}}.
+$$
+Then use `quadprog` to solve this dual form.  
+```{r Solve Dual Form}
+library(quadprog)
+
+# Helper function for generating Q
+helper_fun = function(i) {
+  y[i] * (t(x)[, i])
+}
+
+# Represent the dual form using matrix
+Q = sapply(1:N, helper_fun)
+D = t(Q) %*% Q
+d = matrix(1, nrow = N, ncol = 1)
+A = t(rbind(matrix(y, nrow = 1, ncol = N), diag(nrow = N)))
+b_0 = rbind(matrix(0, nrow = 1, ncol = 1), matrix(0, nrow = N, ncol = 1))
+eps = 5e-4
+
+# Calculate the dual form about maximization over alpha
+soln = solve.QP(Dmat = D + eps * diag(N), dvec = d, 
+                Amat = A, bvec = b_0, 
+                meq = 1, factorized = FALSE)
+qpsoln = matrix(soln$solution, nrow = N)
+
+# Find the nonzero part of solution
+nonzero = abs(qpsoln) > 1e-5
+
+# Helper function for w
+w_helper = function(i) {
+  qpsoln[i] * y[i] * x[i, ]
+}
+w = rowSums(sapply(1:N, w_helper))
+b = -(max(x[y == -1, ] %*% w) + min(x[y == 1, ] %*% w)) / 2
+```  
+The support vector is 
+```{r}
+(support_vectors = x[which(nonzero), ])
+```  
+and the decision line is `r w[1]`$x_{1}$ `r w[2]`$x_{2}+$ `r b`$=0$.
+
+Now we plot the solution as following,  
+```{r, echo = FALSE}
+library(ggplot2)
+ggplot(data.frame(x, y), aes(x = X1, y = X2)) + 
+  ggtitle("SVM Dual From") + 
+  geom_point(aes(colour = factor(y))) + 
+  geom_point(data = data.frame(x[which(nonzero), ]), aes(x = X1, y = X2), 
+             shape = 1, size = 5) + 
+  geom_abline(intercept = -b / w[2], slope = -w[1] / w[2]) + 
+  geom_abline(intercept = -(b - 1) / w[2], slope = -w[1] / w[2], 
+              linetype = "dashed") + 
+  geom_abline(intercept = -(b + 1) / w[2], slope = -w[1] / w[2], 
+              linetype = "dashed") + 
+  theme_bw()
+```
+Next, we compare our conclusions with the SVM model.
+```{r Check with "svm"}
+library(e1071)
+svm.fit = svm(y ~ ., data = data.frame(x, y),
+              type = "C-classification",
+              kernel = "linear",
+              scale = FALSE,
+              cost = 10000)
+w = t(svm.fit$coefs) %*% svm.fit$SV
+b = -svm.fit$rho 
+```  
+Now plot the results from `e1071`.
+```{r, echo = FALSE}
+# Plot
+ggplot(data.frame(x, y), aes(x = X1, y = X2)) + 
+  ggtitle("SVM with e1071") + 
+  geom_point(aes(colour = factor(y))) + 
+  geom_point(data = data.frame(x[svm.fit$index, ]), aes(x = X1, y = X2), 
+             shape = 1, size = 5) + 
+  geom_abline(intercept = -b / w[1, 2], slope = -w[1, 1] / w[1, 2]) + 
+  geom_abline(intercept = -(b - 1) / w[1, 2], slope = -w[1, 1] / w[1, 2], 
+              linetype = "dashed") + 
+  geom_abline(intercept = -(b + 1) / w[1, 2], slope = -w[1, 1] / w[1, 2], 
+              linetype = "dashed") + 
+  theme_bw()
+```  
+
+## b)  
+First, generate the nonseparable data. 
+```{r Generate nonseparable data}
+n = 10
+p = 2
+set.seed(70)
+xpos = matrix(rnorm(n * p, mean = 0, sd = 1), n, p)
+xneg = matrix(rnorm(n * p, mean = 1.5, sd = 1), n, p)
+x = rbind(xpos, xneg)
+y = matrix(c(rep(1, n), rep(-1, n)))
+N = 2 * n
+```  
+Now we have generated the nonseparable data and plot them.  
+```{r, echo = FALSE}
+ggplot(data.frame(x, y), aes(x = X1, y = X2)) + 
+  ggtitle("Nonseparable Data") + 
+  geom_point(aes(colour = factor(y))) + 
+  theme_bw()
+```  
+$\mathrm{D}$ and $\boldsymbol{d}$ are the same as that in the separable case, and matrices in the constrains are,  
+$$
+\mathrm{A} = 
+\left[\begin{array}{ccccc}
+y_{1} \quad y_{2} \quad y_{3} \quad \cdots \quad y_{N} \\
+1     \quad   0   \quad   0   \quad   \cdots  \quad 0 \\
+0     \quad   1   \quad   0   \quad   \cdots  \quad 0 \\
+0     \quad   0   \quad   1   \quad   \cdots  \quad 0 \\
+\vdots \\
+0     \quad   0   \quad   0   \quad   \cdots  \quad 1 \\
+-1     \quad   0   \quad   0   \quad   \cdots  \quad 0 \\
+0     \quad   -1   \quad   0   \quad   \cdots  \quad 0 \\
+0     \quad   0   \quad   -1   \quad   \cdots  \quad 0 \\
+\vdots \\
+0     \quad   0   \quad   0   \quad   \cdots  \quad -1 \\
+\end{array}\right]_{(2N+1) \times N}
+$$  
+and, 
+$$
+\boldsymbol{b}_{0}=
+\left[\begin{array}{c}
+0 \\
+0 \\
+\vdots\\
+0
+\end{array}\right]_{2N+1}
+$$
+
+Use `quadprog` to solve the dual form. The process is similar to that in part a), so the code is not shown here. 
+```{r, echo = FALSE}
+# Represent the dual form with matrix
+# Helper function for generating Q
+helper_fun = function(i) {
+  y[i] * (t(x)[, i])
+}
+Q = sapply(1:N, helper_fun)
+D = t(Q) %*% Q
+d = matrix(1, nrow = N, ncol = 1)
+A = t(rbind(matrix(y, nrow = 1, ncol = N),
+            diag(N),
+            -diag(N)))
+# Cost term
+c = 1
+b_0 = rbind(matrix(0, nrow = 1, ncol = 1),
+            matrix(0, nrow = N, ncol = 1),
+            matrix(-c, nrow = N, ncol = 1))
+eps = 5e-4
+
+# Calculate the dual form about maximization over alpha
+soln = solve.QP(Dmat = D + eps * diag(N), dvec = d, 
+                Amat = A, bvec = b_0, 
+                meq = 1, factorized = FALSE)
+qpsoln = matrix(soln$solution, nrow = N)
+
+# Find the nonzero part of solution
+nonzero = abs(qpsoln) > 1e-5
+
+# Helper function for w
+w_helper = function(i) {
+  qpsoln[i] * y[i] * x[i, ]
+}
+nonzero = abs(qpsoln) > 1e-5
+w = rowSums(sapply(1:N, w_helper))
+
+margin_vec = (abs(qpsoln) > 1e-5) & (abs(qpsoln) < c - 1e-5)
+
+# Helper function for b
+b_helper = function(i) {
+  x[i, ] %*% w - y[i]
+}
+b = -mean(sapply(which(margin_vec), b_helper))
+```  
+The support vectors are  
+```{r}
+(x[which(nonzero), ])
+```  
+Now we plot the solution.  
+```{r, echo = FALSE}
+ggplot(data.frame(x, y), aes(x = X1, y = X2)) + 
+  ggtitle("Nonseparable SVM Dual Form") + 
+  geom_point(aes(colour = factor(y))) + 
+  geom_point(data = data.frame(x[which(nonzero), ]), aes(x = X1, y = X2), 
+             shape = 1, size = 5) + 
+  geom_abline(intercept = -b / w[2], slope = -w[1] / w[2]) + 
+  geom_abline(intercept = -(b - 1) / w[2], slope = -w[1] / w[2], 
+              linetype = "dashed") + 
+  geom_abline(intercept = -(b + 1) / w[2], slope = -w[1] / w[2], 
+              linetype = "dashed") + 
+  theme_bw()
+```  
+
+Now use `e1071` package to solve this SVM for comparison.  
+```{r}
+svm_fit = svm(y ~ ., data = data.frame(x, y), 
+              type = "C-classification",
+              kernel = "linear",
+              scale = FALSE,
+              cost = 1)
+w = t(svm_fit$coefs) %*% svm_fit$SV
+b = -svm_fit$rho
+```  
+Plot the result.  
+```{r, echo = FALSE}
+# Plot
+ggplot(data.frame(x, y), aes(x = X1, y = X2)) + 
+  ggtitle("Nonseparable SVM with e1071") + 
+  geom_point(aes(colour = factor(y))) + 
+  geom_point(data = data.frame(x[svm_fit$index, ]), aes(x = X1, y = X2),
+             shape = 1, size = 5) + 
+  geom_abline(intercept = -b / w[1, 2], slope = -w[1, 1] / w[1, 2]) + 
+  geom_abline(intercept = -(b - 1) / w[1, 2], slope = -w[1, 1] / w[1, 2], 
+              linetype = "dashed") + 
+  geom_abline(intercept = -(b + 1) / w[1, 2], slope = -w[1, 1] / w[1, 2], 
+              linetype = "dashed") + 
+  theme_bw()
+```
+
+## c)  
+The new deficion function is 
+$$
+\begin{aligned}
+f(\boldsymbol{x}) 
+&= \boldsymbol{x}^{\mathrm{T}}\boldsymbol{\beta}+\beta_{0}\\
+&=\boldsymbol{x}^{\mathrm{T}}\sum_{i=1}^{N}\alpha_{i}y_{i}\boldsymbol{x}_{i} + \beta_{0} \\
+&=\sum_{i=1}^{N}\alpha_{i}y_{i}(\boldsymbol{x}^{\mathrm{T}}\boldsymbol{x}_{i})+\beta_{0} \\
+&=\sum_{i=1}^{N}\alpha_{i}y_{i}(\Phi(\boldsymbol{x})^{\mathrm{T}}\Phi(\boldsymbol{x}_{i}))+\beta_{0}
+\end{aligned}
+$$  
+Using the relationship between kernel function and basis expansions, 
+$$
+f(\boldsymbol{x})=\sum_{i=1}^{N}\alpha_{i}y_{i}\mathrm{K}(\boldsymbol{x}, \boldsymbol{x}_{i})+\beta_{0}
+$$  
+
+## d)  
+The optimization part of the dual problem can be written as $\mathrm{min}\quad \left(\displaystyle\frac{1}{2}\displaystyle\sum_{i=1}^{N}\displaystyle\sum_{j=1}^{N}\alpha_{i}\alpha_{j}y_{i}y_{j}\mathrm{K}(\boldsymbol{x}_{i}, \boldsymbol{x}_{j})-\displaystyle\sum_{i=1}^{N}\alpha\right)$. Define a new vector $\boldsymbol{\mathrm{Q}}=\left[y_{1}\Phi(\boldsymbol{x}_{1}),\cdots, y_{N}\Phi(\boldsymbol{x}_{N})\right]$, then
+$$
+\boldsymbol{\mathrm{D}}=\boldsymbol{\mathrm{Q}}^{\mathrm{T}}\boldsymbol{\mathrm{Q}}=\left[y_{i}y_{j}\mathrm{K}(\boldsymbol{x}_{i}, \boldsymbol{x}_{j})\right]_{i, j=1,\cdots, N}
+$$
+$\boldsymbol{\mathrm{A}}$, $d$ and $b_{0}$ are the same as part b.
