@@ -1,0 +1,182 @@
+---
+title: "Code_for_lasso"
+author: "Qi Liu"
+date: "8/17/2018"
+output: pdf_document
+---
+
+Consider the objective function
+$$
+f(\boldsymbol{\beta}, \beta_{0})=\displaystyle\frac{1}{2n}||\boldsymbol{y}-\beta_{0}-\boldsymbol{\mathrm{X}\beta}||_{2}^{2}+\lambda\Sigma_{j=1}^{p}|\beta_{j}|
+$$  
+
+##Step 1:
+Fixing all other parameters, write down the one-variable optimization problem of $\beta_{0}$ based on this objective function.   
+
+When $\beta_{j}\ (j = 1, 2, \cdots, p)$ are all fixed, the objective function for this optimization problem is $g(\beta_{0})=\big\lvert\big\lvert\mathbf{y}-\beta_{0}-\mathrm{X}\boldsymbol{\beta}\big\rvert\big\rvert_{2}^{2}$. Let $\mathrm{X}_{0}=[1, 1, \cdots, 1]^{\mathrm{T}}$, then this becomes an simple linear regression problem with $\mathrm{X}_{0}$ as design matrix, and $\beta_{0}$ the parameter to be optimized. The solution of this optimization problem is
+$\beta_{0}=\displaystyle\frac{\mathrm{X}_{0}^{\mathrm{T}}(\mathbf{y}-\mathrm{X}\boldsymbol{\beta})}{\mathrm{X}_{0}^{\mathrm{T}}\mathrm{X}_{0}}$.  
+
+##Step 2:
+Fixing all other parametes, write down the one-variable optimization problem of $\beta_{j}$, for $j=1, 2, \dots, p$ based on this objective function.  
+
+First, rewrite the design matrix $\mathrm{X}$ as $\mathrm{X}=[\mathbf{x}_{1}, \cdots, \mathbf{x}_{p}]$, in which $p$ is the number of features. Take derivative of $\boldsymbol{\beta}_{j}$, we have  
+$$
+\displaystyle\frac{\partial f(\boldsymbol{\beta}, \beta_{0})}{
+\partial \beta_{j}}=\displaystyle\frac{1}{2n}(-2\mathbf{x}_{i}^{T})(\mathbf{y}-\beta_{0}-\sum_{k\neq j}\beta_{k}\mathbf{x}_{k}-\beta_{j}x_{j})
+\begin{cases}
++\lambda, \quad \beta_{j} > 0 \\
+-\lambda, \quad \beta_{j} < 0
+\end{cases}
+$$  
+Set this partial derivative to $0$, we have the final explicit solution is
+$$
+\beta_{j} = 
+\begin{cases}
+\displaystyle\frac{\mathbf{x}_{j}^{T}(\mathbf{y}-\beta_{0}-\displaystyle\sum_{k \neq j}\beta_{k}\mathbf{x}_{k})-n\lambda}{\mathbf{x}_{j}^{T}\mathbf{x}_{j}}, \quad \beta_{j}^{OLS}>\displaystyle\frac{n\lambda}{\mathbf{x}_{j}^{T}\mathbf{x}_{j}} \\
+0,\quad\quad\quad\quad\quad\quad\quad\quad\quad\quad\quad\quad\quad |\beta_{j}^{OLS}|\leq \displaystyle\frac{n\lambda}{\mathbf{x}_{j}^{T}\mathbf{x}_{j}}\\
+\displaystyle\frac{\mathbf{x}_{j}^{T}(\mathbf{y}-\beta_{0}-\displaystyle\sum_{k \neq j}\beta_{k}\mathbf{x}_{k})+n\lambda}{\mathbf{x}_{j}^{T}\mathbf{x}_{j}}, \quad \beta_{j}^{OLS}<-\displaystyle\frac{n\lambda}{\mathbf{x}_{j}^{T}\mathbf{x}_{j}}
+\end{cases}
+$$
+where $\beta_{j}^{OLS}=\displaystyle\frac{\mathbf{x}_{j}^{T}(\mathbf{y}-\beta_{0}-\displaystyle\sum_{k \neq j}\beta_{k}\mathbf{x}_{k})}{\mathbf{x}_{j}^{T}\mathbf{x}_{j}}$.  
+
+##Step 3:
+Fixing all $\beta_{j}$, $j = 1, 2, \dots, p$ to be 0. Use part a) to update $\beta_{0}$ for its optimal solution. After this update, find the smallest $\lambda$ value that none of the $\beta_{j}'s$, $j = 1, 2, \dots, p$ can be updated out of zero in the next iteration. Denote this value as $\lambda_{max}$. 
+In the solution of part (a), set $\boldsymbol{\beta}=0_{p\times 1}$, then the $\beta_{0}=\displaystyle\frac{1}{n}\sum_{i=1}^{n}y_{i}$.  
+
+Now we find the $\lambda_{\mathrm{max}}$. For each value of $j$ between 1 and $p$, calculate the value of $\displaystyle\frac{\mathbf{x}_{j}^{T}(\mathbf{y}-\displaystyle\frac{1}{n}\displaystyle\sum_{i=1}^{n}y_{i})}{N}$, then $\lambda_{\mathrm{max}}=\mathrm{max}\left\{\displaystyle\frac{\mathbf{x}_{j}^{T}(\mathbf{y}-\displaystyle\frac{1}{n}\displaystyle\sum_{i=1}^{n}y_{i})}{N}\right\}_{j=1, \cdots, p}$.  
+
+##Step 4:
+Implement this procedure to get a path-wise coordinate descent solution of the lasso problem.  
+First of all, we generate the data. (Details about this generation is included in the Rmd file, which would not be displayed here.) 
+```{r Generate data, include = FALSE}
+library(MASS)
+library(glmnet)
+
+# Sample size
+N = 500
+
+# Number of parameters
+P = 200
+
+# True values of parameters
+Beta = c(seq(1, 0, length.out = 21), rep(0, P - 21))
+Beta0 = 0.5
+
+# Set seed for generating data
+set.seed(1)
+
+# Generate X
+# Generate covariance matrix
+V = matrix(0.5, P, P)
+# Change diagonal elements to 1
+diag(V) = 1
+# Now matrix V is the covariance matrix
+X = as.matrix(mvrnorm(N, mu = rep(0, P), Sigma = V))
+
+# Generate y
+y = Beta0 + X %*% Beta + rnorm(N)
+
+# Generate testing data for the later tuning process
+set.seed(1)
+X_test = as.matrix(mvrnorm(n = 1000, mu = rep(0, P), Sigma = V))
+y_test = Beta0 + X_test %*% Beta + rnorm(n = 1000)
+
+# Check the results of OLS
+lr = lm(y ~ X)
+```
+Now, we write a function for Lasso. 
+```{r Lasso Function}
+# Prepare the soft thresholding function for updating beta_j (part b)
+soft_th <- function(b, lambda, x) {
+  # @param b: current beta values for ols
+  # @param lambda: penalty
+  # @param x: column of design matrix correpsonding to b
+  if (b > N * lambda / (t(x) %*% x)) {
+    return (b - N * lambda / (t(x) %*% x))
+  }
+  else if (b < - N * lambda / (t(x) %*% x)) {
+    return (b + N * lambda / (t(x) %*% x))
+  }
+  else {
+    return (0)
+  }
+}
+
+# Initiate lambda as the lambda_max value in part (c)
+lambda_seq = numeric(P)
+for (j in 1:P) {
+  lambda_seq[j] = t(X[ , j]) %*% (y - mean(y)) / 500
+}
+lambda_max = max(lambda_seq)
+
+# Produce a sequence of lambda values 
+lambda = exp(seq(log(lambda_max), log(0.01), length.out = 100))
+
+# Lasso Fit function
+LassoFit <- function(myX, myY, mylambda, tol = 1e-5, maxitr = 100){
+  # @param myX: design matrix
+  # @param myY: dependent data
+  # @param mylambda: sequence of lambda values to be used
+  # @param tol: tolerance level for beta's change
+  # @param maxitr: total iteration times for each lambda
+  
+  # Initiate objects to record the values
+  mybeta = matrix(NA, nrow = ncol(myX), ncol = length(mylambda))
+  mybeta0 = rep(NA, length(mylambda))
+  
+  # Initiate beta and beta0
+  current_beta = matrix(0, P, 1)
+  # According to solution of part (c)
+  current_beta0 = mean(myY) 
+  
+  # Loop for each lambda value
+  for (l in 1:length(mylambda)) {
+    # Reduce the current lambda to the next smaller one
+    current_lambda = mylambda[l]
+    
+    # Initiate a matrix for beta, in order to 
+    # check the convergence of beta
+    beta_iteration = matrix(0, nrow = ncol(myX), ncol = maxitr)
+    
+    # Loop for each iteration
+    for (k in 1:maxitr) {
+      # Update the intercept term based on current beta values
+      current_beta0 = mean(myY - myX %*% current_beta)
+      
+      # Compute residuals
+      r = y - current_beta0 - myX %*% current_beta
+      
+      # Loop for each beta_j
+      for (j in 1:ncol(myX)) {
+        # Remove the effect of jth variable from the model,
+        # and compute the residual
+        r = r + myX[ , j] * current_beta[j, ]
+        
+        # Update beta_j using the result of part (b)
+        # First, calculate the beta_j for corresponding OLS
+        beta_j_ols = t(myX[ , j]) %*% r / (t(myX[ , j]) %*% myX[ , j])
+        # Second, using threshold to obtain beta_j
+        current_beta[j] = soft_th(b = beta_j_ols, lambda = current_lambda, x = X[ , j])
+        
+        # Add the effect of jth variable back into the model, 
+        # and compute the residual
+        r = r - myX[ , j] * current_beta[j]
+      }
+      
+      # Update beta_iteration matrix
+      beta_iteration[ , k] = current_beta
+      # Check whether beta change more than the tolerance level in this iteration
+      if (k > 2) {
+        if (sum(abs(beta_iteration[ , (k - 1)] - beta_iteration[ , k])) < tol) {
+          break
+        }
+      }
+    }
+    # Record the current beta and current beta_0 for each lambda
+    mybeta[ , l] = current_beta
+    mybeta0[l] = current_beta0
+  }
+  # Return final values for this function
+  return(list("beta" = mybeta, "b0" = mybeta0, "lambda" = mylambda))
+}
+```  
