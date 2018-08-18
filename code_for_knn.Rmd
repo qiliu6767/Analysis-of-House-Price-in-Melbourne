@@ -1,0 +1,83 @@
+---
+title: "Code_for_Knn"
+author: "Qi Liu"
+date: "8/17/2018"
+output: pdf_document
+---
+
+First, we need to write a function that calculates the euclidean distance between any two vectors.
+```{r}
+euclidean_distance = function(x1, x2){
+  return (sqrt(sum((x1 - x2) ^ 2)))
+}
+```  
+Second, we write a function with which we can calculate the distances between a given vector $\vec{y}$ and all the row vectors in a known matrix $\mathrm{X}$, and then obtain the indices of the k nearest vectors in $\mathrm{X}$.
+```{r}
+nearest_k_neighbors = function(X, y, dist_func = euclidean_distance, k){
+  # @param X: feature matrix for training data
+  # @param y: a given vector to be used to calculate distance from rows of X
+  # @param k: value of the number of neighbors
+  
+  # Helper function for "apply"
+  euclidean_distance_2 = function(x){
+    return (euclidean_distance(x, y))
+  }
+  
+  # Apply the function above to each row of matrix X, and obtain a sequence composed of distances, with length nrow(X)
+  distances = apply(X, 1, euclidean_distance_2)
+  
+  # Find the indices of k samllest distances
+  return (order(distances)[1:k])
+}
+```  
+Third, we write a function to make prediction for a given vector data. To begin with, we write a function to find mode in a given vector. 
+```{r}
+# First write a helper function to obtain mode
+getmode = function(v) {
+  # Change given vector into unique values
+  uniqv = unique(v)
+  
+  # Create a vector to store showing times for each unique element
+  unique_times = tabulate(match(v, uniqv))
+  
+  # Find the maximum value of the showing times
+  max_unique_times = max(unique_times)
+  
+  # Select the mode in a random manner
+  # Check how many values are equal to maximum
+  modes_indices = which(unique_times == max_unique_times)
+  length_modes = length(modes_indices)
+  if (length_modes > 1) {
+    # If there are more than one mode, select one randomly
+    mode = uniqv[sample(modes_indices, 1)]}
+  else {
+    mode = uniqv[modes_indices]}
+  return (mode)
+}
+
+predict_single = function(X, y, dist_func = euclidean_distance, k, Y){
+  # @param Y: label vector related with X
+  
+  # Get indices used for making prediction
+  indices = nearest_k_neighbors(X, y, dist_func, k)
+  
+  return (getmode(Y[indices]))
+}
+```  
+Finally, we write a function to make prediction for each row of a given matrix.  
+```{r}
+knn_predict = function(X, X_que, dist_fun = euclidean_distance, k, Y){
+  # @param X_que: feature matrix to make predictions on
+  
+  # Helper function for "apply"
+  knn_predict_1 = function(x_que){
+    predict_single(X, x_que, dist_func, k, Y)
+  }
+  
+  # Apply the knn_predict_1 function to each row of X_que(i.e. testing data)
+  predict_labels = apply(X_que, 1, knn_predict_1)
+  
+  predict_labels
+}
+```
+When $k$ is even, there might be more than one mode appearing in each prediction precess. I use `sample()` function to randomly select one.
